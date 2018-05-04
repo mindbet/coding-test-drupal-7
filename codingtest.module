@@ -1,0 +1,290 @@
+<?php
+
+
+
+/**
+ * Develop a custom module for Drupal 7 that does the following:
+ *
+ * Create an admin form with three fields
+ * Path (e.g. test)
+ * Dropdown listing all the Content types.
+ * Conditional Dropdown: listing all the content of content type selected
+ * in the previous dropdown out of which two or more are selected.
+ *
+ * Submit button.
+ * On form submit, validate and redirect to the path entered on the first field
+ * (e.g. www.domain.com/test where ‘test’ was submitted as Path is form from step 1)
+ * and make the page at the path display all the selected content from dropdown
+ * in step-c above.
+ */
+
+
+
+
+
+/**
+ * Implements hook_menu().
+ */
+function codingtest_menu() {
+  $items = array();
+
+
+  // Set up menu entry to access the selection form.
+  $items['admin/config/services/codingtest'] = array(
+    'title' => 'Coding Test',
+    'description' => t('Settings for content selection'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('codingtest_dependent_dropdown'),
+    'access callback' => TRUE,
+  );
+
+  // Set up menu entry to show selection results.
+    $items['codingtestresults'] = array(
+      'title' => 'Chosen content',
+      'description' => 'Content selection results',
+      'page callback' => 'codingtest_results_callback',
+      'access callback' => array(TRUE),
+    );
+
+  return $items;
+}
+
+
+
+
+/**
+ * AJAX-based dropdown example form.
+ *
+ * A form with a dropdown whose options are dependent on a
+ * choice made in a previous dropdown.
+ *
+ * On changing the first dropdown, the options in the second
+ * are updated.
+ */
+
+
+  // function to create the form
+
+function codingtest_dependent_dropdown($form, &$form_state) {
+  // Get the list of options to populate the first dropdown.
+  $options_first = codingtest_get_first_dropdown_options();
+  // If we have a value for the first dropdown from $form_state['values'] we use
+  // this both as the default value for the first dropdown and also as a
+  // parameter to pass to the function that retrieves the options for the
+  // second dropdown.
+  $selected = isset($form_state['values']['dropdown_first']) ? $form_state['values']['dropdown_first'] : key($options_first);
+
+
+  // text field for path
+
+  $form['codingtest_path'] = array(
+    '#type' => 'textfield',
+    '#title' => 'Path',
+    '#description' => 'Path for content display.',
+  );
+
+
+  // first dropdown -- list of content types
+
+  $form['dropdown_first'] = array(
+    '#type' => 'select',
+    '#multiple' => TRUE,
+    '#title' => 'Content Types',
+    '#options' => $options_first,
+    '#default_value' => $selected,
+    // Bind an ajax callback to the change event (which is the default for the
+    // select form type) of the first dropdown. It will replace the second
+    // dropdown when rebuilt.
+    '#ajax' => array(
+      // When 'event' occurs, Drupal will perform an ajax request in the
+      // background. Usually the default value is sufficient (eg. change for
+      // select elements), but valid values include any jQuery event,
+      // most notably 'mousedown', 'blur', and 'submit'.
+      // 'event' => 'change',
+      'callback' => 'codingtest_dependent_dropdown_callback',
+      'wrapper' => 'dropdown-second-replace',
+    ),
+  );
+
+
+
+  // second dropdown -- populated by selections made in first dropdown
+
+  $form['dropdown_second'] = array(
+    '#type' => 'select',
+    '#title' => t('Content Available to Select'),
+    // The entire enclosing div created here gets replaced when dropdown_first
+    // is changed.
+    '#prefix' => '<div id="dropdown-second-replace">',
+    '#suffix' => '</div>',
+    // When the form is rebuilt during ajax processing, the $selected variable
+    // will now have the new value and so the options will change.
+    '#multiple' => TRUE,
+    '#options' => codingtest_get_second_dropdown_options($selected),
+    '#default_value' => isset($form_state['values']['dropdown_second']) ? $form_state['values']['dropdown_second'] : '',
+  );
+
+
+  $form['submit']= array(
+  '#type' => 'submit',
+  '#value' => t('Submit'),
+  );
+
+
+    // custom submit handler
+  $form['#submit'][] = 'codingtest_dependent_dropdown_submit';
+
+    // custom validation function
+  $form['#validate'][] = 'codingtest_dependent_dropdown_validate';
+
+  return $form;
+}
+
+
+/**
+ * Selects just the second dropdown to be returned for re-rendering.
+ *
+ * Since the controlling logic for populating the form is in the form builder
+ * function, all we do here is select the element and return it to be updated.
+ *
+ * @return array
+ *   Renderable array (the second dropdown)
+ */
+function codingtest_dependent_dropdown_callback($form, $form_state) {
+  return $form['dropdown_second'];
+}
+
+/**
+ * Helper function to populate the first dropdown.
+ *
+ * This would normally be pulling data from the database.
+ *
+ * @return array
+ *   Dropdown options.
+ */
+function codingtest_get_first_dropdown_options() {
+  // Get list of node types
+  return node_type_get_names();
+}
+
+
+
+/**
+ * Helper function to populate the second dropdown.
+ *
+ * This would normally be pulling data from the database.
+ *
+ * @param string $key
+ *   This will determine which set of options is returned.
+ *
+ * @return array
+ *   Dropdown options
+ */
+
+function codingtest_get_second_dropdown_options($key = '') {
+
+  // set up query for list of nodes
+
+$query = new EntityFieldQuery();
+
+  // find nodes of chosen types
+
+$query->entityCondition('entity_type', 'node')
+  ->entityCondition('bundle', array($key), 'IN')
+  ->propertyCondition('status', 1);
+$result = $query->execute();
+
+  // find nodes of chosen types
+
+if (!empty($result['node'])) {
+  $nids = array_keys($result['node']);
+  $nodes = node_load_multiple($nids);
+
+  // create array of node titles for second dropdown
+
+  $titles = array();
+  foreach ($nodes as $node) {
+    $titles[$node->nid] = $node->title;
+  }
+
+}
+
+
+  // return array of node titles
+
+  if (isset($titles)) {
+    return $titles;
+  }
+  else {
+    return array();
+  }
+}
+
+
+
+/**
+ * Function to handle the form submission
+ */
+
+function codingtest_dependent_dropdown_submit($form, &$form_state) {
+
+  // save all form data in session variable
+    $_SESSION['my_form_data'] = $form_state;
+
+  // $destination is the path entered on the form.
+    $destinationraw = $form_state['values']['codingtest_path'];
+    $destination = check_url($destinationraw);
+
+  // save the path as an alias for the results page
+    $path = array (
+       'source' => 'codingtestresults',
+       'alias' => $destination
+         );
+    path_save($path);
+
+  // submit the form and redirect to created path
+    $form_state['redirect'] = 'codingtestresults';
+
+}
+
+
+
+
+
+
+/**
+ * Deliver the page with the selected content
+ */
+
+
+function codingtest_results_callback(){
+    $nids = ($_SESSION['my_form_data']['input']['dropdown_second']);
+    $nodes = node_load_multiple($nids);
+  foreach ($nodes as $node) {
+     $node_view = node_view($node, $view_mode = 'full');
+     $rendered_node = drupal_render($node_view);
+     print $rendered_node;
+    }
+}
+
+
+
+/**
+ * Form validation
+ */
+
+
+function codingtest_dependent_dropdown_validate($form, &$form_state) {
+  // Check that path is not empty
+  if ($form_state['values']['codingtest_path'] == '') {
+    form_set_error('codingtest_path', 'Path should not be empty');
+  }
+  // Require at least two content types to be selected
+  if (count($form_state['values']['dropdown_first']) < 2) {
+    form_set_error('dropdown_first', 'You need to choose at least two content types');
+  }
+  // Require at least two content types selected
+  if (count($form_state['values']['dropdown_second']) < 1) {
+    form_set_error('dropdown_second', 'No content selected');
+  }
+}

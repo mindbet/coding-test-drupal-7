@@ -1,0 +1,7 @@
+name = Coding test
+description = "Coding test"
+configure = admin/config/services/codingtest
+core = 7.x
+files[] = codingtest.module
+
+version = "7.x-1.0"
